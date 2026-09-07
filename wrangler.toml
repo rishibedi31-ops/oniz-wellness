@@ -1,25 +1,16 @@
-# Oniz Health and Wellness — Cloudflare Worker API
-# Dashboard: Workers & Pages → Create → Worker → paste worker.js
-# CLI:      npx wrangler deploy
-#
-# Secrets (Workers → Settings → Variables and Secrets):
-#   SUPABASE_URL                 https://xxxx.supabase.co
-#   SUPABASE_SERVICE_ROLE_KEY    Project Settings → API → service_role
-#   SESSION_SECRET               long random string
-#   STAFF_EMAIL                  owner login email
-#   STAFF_PASSWORD               owner login password
-#   CALCOM_WEBHOOK_SECRET        optional
-#   ALLOWED_ORIGIN               https://your-pages-domain  (or * while testing)
-
 name = "onizwellness"
 main = "worker.js"
 compatibility_date = "2026-09-07"
 
+# /api/*  → Worker (Supabase)
+# everything else → the website in public/
+[assets]
+directory = "./public"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
+run_worker_first = ["/api/*"]
+
 [vars]
 CLINIC_ID = "clinic-oniz-health"
 TZ = "America/Toronto"
-
-# Pages project that should proxy /api/* to this worker:
-#   [[routes]]
-#   pattern = "api.onizhealthwellness.ca/*"
-#   zone_name = "onizhealthwellness.ca"
