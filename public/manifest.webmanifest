@@ -1,0 +1,15 @@
+{
+  "name": "Oniz Health and Wellness",
+  "short_name": "Oniz Health",
+  "description": "Root-cause care for a quieter body.",
+  "id": "/",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F3EEE4",
+  "theme_color": "#3D5846",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

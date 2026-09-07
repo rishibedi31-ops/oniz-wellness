@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Portal · Oniz Health and Wellness</title>
+  <link rel="icon" href="./favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./css/app.css" />
+</head>
+<body>
+  <div class="layout-portal">
+    <aside class="side">
+      <div class="side-brand">
+        <a href="index.html" id="side-mark"></a>
+        <p class="kicker" style="margin-top:0.75rem">Practitioner</p>
+      </div>
+      <nav>
+        <a href="#today" data-tab="today" class="is-on">Today</a>
+        <a href="#patients" data-tab="patients">Patients</a>
+        <a href="#desk" data-tab="desk">Desk</a>
+        <a href="#claims" data-tab="claims">Claims</a>
+        <a href="#chart" data-tab="chart">Chart</a>
+      </nav>
+      <div style="padding:1rem;margin-top:auto">
+        <button class="btn btn-ghost" type="button" id="signout-portal" style="width:100%">Sign out</button>
+      </div>
+    </aside>
+    <div>
+      <div class="mobile-nav" id="mobile-nav"></div>
+      <main class="wrap section" id="view"></main>
+    </div>
+  </div>
+  <script src="./js/config.js"></script>
+  <script src="./js/api.js"></script>
+  <script src="./js/portal.js"></script>
+</body>
+</html>

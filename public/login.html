@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · Oniz Health and Wellness</title>
+  <link rel="icon" href="./favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./css/app.css" />
+</head>
+<body>
+  <div data-header></div>
+  <main class="wrap-sm section">
+    <p class="kicker">Account</p>
+    <h1>Sign in</h1>
+    <div class="tabs" style="margin-top:1.25rem">
+      <button type="button" class="is-on" data-mode="staff">Practitioner</button>
+      <button type="button" data-mode="patient">Patient</button>
+    </div>
+    <form class="form" id="login-form">
+      <label>Email<input name="email" type="email" required autocomplete="username" /></label>
+      <label id="pass-field">Password<input name="password" type="password" autocomplete="current-password" /></label>
+      <label id="phone-field" hidden>Phone on your chart<input name="phone" autocomplete="tel" /></label>
+      <button class="btn btn-primary" type="submit">Continue</button>
+    </form>
+    <p class="muted" id="hint" style="margin-top:1rem">Use the owner email and password from your Worker secrets.</p>
+  </main>
+  <div data-footer></div>
+  <script src="./js/config.js"></script>
+  <script src="./js/api.js"></script>
+  <script src="./js/login.js"></script>
+</body>
+</html>
