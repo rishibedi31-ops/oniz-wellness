@@ -11,7 +11,7 @@
 #   CALCOM_WEBHOOK_SECRET        optional
 #   ALLOWED_ORIGIN               https://your-pages-domain  (or * while testing)
 
-name = "oniz-health-api"
+name = "onizwellness"
 main = "worker.js"
 compatibility_date = "2026-09-07"
 
