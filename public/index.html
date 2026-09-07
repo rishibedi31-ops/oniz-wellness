@@ -1,1 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Oniz Health and Wellness</title>
+  <meta name="description" content="Root-cause care for a quieter body. Naturopathic medicine in Brampton." />
+  <meta property="og:title" content="Oniz Health and Wellness" />
+  <meta property="og:image" content="./og.jpg" />
+  <link rel="icon" href="./favicon.svg" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./css/app.css" />
+</head>
+<body>
+  <div data-header></div>
+  <main>
+    <section class="wrap hero">
+      <div>
+        <p class="kicker">Brampton · Ontario</p>
+        <h1>Care that tells the truth.</h1>
+        <p class="lead">Oniz Health and Wellness is a sole-practitioner clinic for people who want unhurried visits, a clear plan, and a record that actually follows them.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="book.html">Book a visit</a>
+          <a class="btn btn-ghost" href="#services">See services</a>
+        </div>
+        <dl class="stats">
+          <div><dt>Visit length</dt><dd>45–90 min</dd></div>
+          <div><dt>First visit</dt><dd>Intake included</dd></div>
+          <div><dt>Records</dt><dd>Yours, kept</dd></div>
+        </dl>
+      </div>
+      <div class="hero-photo">
+        <img src="./images/hero.jpg" alt="Treatment room at Oniz Health and Wellness" />
+        <p class="hero-caption">Private treatment room · Queen Street East</p>
+      </div>
+    </section>
 
+    <section id="services" class="band">
+      <div class="wrap section">
+        <p class="kicker">The work</p>
+        <h2>Services</h2>
+        <p class="muted" style="margin-top:0.5rem;max-width:36rem">Book online. After you choose a time we send the health history and the consents that belong with that visit.</p>
+        <div class="cards services" id="services-list"><p class="muted">Loading services…</p></div>
+        <div style="margin-top:2rem"><a class="btn btn-primary" href="book.html">Choose a time</a></div>
+      </div>
+    </section>
+
+    <section class="wrap section split">
+      <img src="./images/studio.jpg" alt="Botanicals on linen in the clinic" />
+      <div>
+        <p class="kicker">The practitioner</p>
+        <h2 id="prac-name">Your clinician</h2>
+        <p class="muted" id="prac-bio" style="margin-top:1rem">Unhurried visits, a written plan, and follow-through you can see in the chart.</p>
+      </div>
+    </section>
+
+    <section class="band-deep">
+      <div class="wrap section">
+        <p class="kicker">How a visit starts</p>
+        <h2>Three quiet steps</h2>
+        <div class="steps">
+          <article class="step"><p class="n">01</p><h3>Tell us who you are</h3><p class="muted" style="margin-top:0.5rem">First name, last name, email, and phone — then pick a service and a time that is actually open.</p></article>
+          <article class="step"><p class="n">02</p><h3>Fill the intake</h3><p class="muted" style="margin-top:0.5rem">Health history and the consent forms for that visit. We keep every version.</p></article>
+          <article class="step"><p class="n">03</p><h3>Arrive already known</h3><p class="muted" style="margin-top:0.5rem">Your practitioner opens a record with profile, intake, consents, visits, SOAP notes, files, insurance, and claims.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section" id="quotes" hidden>
+      <p class="kicker">From the chart, not a script</p>
+      <h2>What people say</h2>
+      <div class="cards services" id="quote-list"></div>
+    </section>
+
+    <section class="band">
+      <div class="wrap section split">
+        <div>
+          <p class="kicker">Hours</p>
+          <h2>When the door is open</h2>
+          <ul class="hours" id="hours-list"></ul>
+          <p style="margin-top:1.5rem"><a href="contact.html" style="color:var(--sage);text-decoration:underline;text-underline-offset:4px">Ask the desk</a></p>
+        </div>
+        <div>
+          <p class="kicker">Questions</p>
+          <h2>Before you book</h2>
+          <dl class="faq" id="faq-list"></dl>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section photos">
+      <img src="./images/reception.jpg" alt="Reception desk" />
+      <img src="./images/apothecary.jpg" alt="Apothecary shelf" />
+    </section>
+  </main>
+  <div data-footer></div>
+  <script src="./js/config.js"></script>
+  <script src="./js/api.js"></script>
+  <script src="./js/home.js"></script>
+</body>
+</html>
