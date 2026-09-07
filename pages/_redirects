@@ -1,5 +1,0 @@
-# Proxy API calls from Cloudflare Pages to the Worker.
-# Replace the hostname with your Worker URL after you create it
-# (Workers & Pages → oniz-health-api → Visit).
-
-/api/*  https://oniz-health-api.YOUR_SUBDOMAIN.workers.dev/api/:splat  200
