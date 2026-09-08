@@ -1,6 +1,7 @@
 if (!requireRole("staff", "login.html")) throw new Error("redirect");
 
 qs("#side-mark").innerHTML = wordmark();
+if (qs("#staff-label")) qs("#staff-label").textContent = session().staffRole === "owner" ? "Owner" : "Practitioner";
 qs("#signout-portal").addEventListener("click", () => { setSession(null); location.href = "index.html"; });
 qs("#mobile-nav").innerHTML = qsa(".side nav a").map((a) =>
   `<a href="${a.getAttribute("href")}" data-tab="${a.dataset.tab}">${a.textContent}</a>`
@@ -246,13 +247,151 @@ async function showClaims() {
     </table></div>`;
 }
 
+async function showCalendar() {
+  setTab("calendar");
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  const to = new Date(from);
+  to.setDate(to.getDate() + 14);
+  const d = await api(`/api/portal/calendar?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`);
+  qs("#view").innerHTML = `
+    <p class="kicker">Schedule</p>
+    <h1>Calendar</h1>
+    <p class="muted" style="margin-top:0.4rem">Next 14 days</p>
+    ${apptTable(d.appointments)}
+    <h2 style="margin-top:2rem">Blocks</h2>
+    ${(d.blocks || []).map((b) => `<p>${formatWhen(b.start_at)} · ${b.reason || "Blocked"}</p>`).join("") || empty("No blocks.")}`;
+}
+
+async function showForms() {
+  setTab("forms");
+  const d = await api("/api/portal/forms");
+  qs("#view").innerHTML = `
+    <p class="kicker">Library</p>
+    <h1>Forms</h1>
+    <h2 style="margin-top:1.5rem">Intake templates</h2>
+    ${(d.intakes || []).map((t) => `<p>${t.name} · v${t.version} · ${t.is_active ? "active" : "off"}</p>`).join("") || empty("None.")}
+    <h2 style="margin-top:2rem">Consent templates</h2>
+    ${(d.consents || []).map((t) => `<article class="notice" style="margin-top:0.7rem"><strong>${t.name}</strong> · v${t.version}<p class="muted" style="white-space:pre-wrap;margin-top:0.4rem">${(t.body || "").slice(0, 280)}</p></article>`).join("") || empty("None.")}
+    <form class="form" id="consent-form" style="margin-top:1.5rem">
+      <h3>Add consent</h3>
+      <label>Name<input name="name" required /></label>
+      <label>Body<textarea name="body" required></textarea></label>
+      <button class="btn btn-primary" type="submit">Save consent</button>
+    </form>`;
+  qs("#consent-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await api("/api/portal/forms/consents", { method: "POST", body: { name: fd.get("name"), body: fd.get("body") } });
+      toast("Consent saved");
+      showForms();
+    } catch (err) { toast(err.message, "err"); }
+  });
+}
+
+async function showConnectors() {
+  setTab("connectors");
+  const d = await api("/api/portal/connectors");
+  qs("#view").innerHTML = `
+    <p class="kicker">Integrations</p>
+    <h1>Connectors</h1>
+    ${(d.connectors || []).map((c) => `<article class="notice" style="margin-top:0.7rem">
+      <strong>${c.label || c.kind}</strong> · ${c.status}
+      <p class="muted" style="margin-top:0.3rem">${c.kind}</p>
+    </article>`).join("") || empty("No connectors seeded yet.")}
+    <form class="form" id="cal-form" style="margin-top:1.5rem">
+      <h3>Cal.com embed</h3>
+      <label>Embed URL<input name="embed" value="${d.clinic?.cal_embed_url || ""}" placeholder="https://cal.com/..." /></label>
+      <button class="btn btn-ghost" type="submit">Save Cal.com</button>
+    </form>`;
+  qs("#cal-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const embed = new FormData(e.target).get("embed");
+    try {
+      await api("/api/portal/connectors/calcom", { method: "POST", body: { config: { embed_url: embed }, status: embed ? "connected" : "disconnected" } });
+      toast("Cal.com saved");
+    } catch (err) { toast(err.message, "err"); }
+  });
+}
+
+async function showSettings() {
+  setTab("settings");
+  const clinic = await api("/api/clinic", { auth: false });
+  const c = clinic.clinic || clinic;
+  qs("#view").innerHTML = `
+    <p class="kicker">Clinic</p>
+    <h1>Settings</h1>
+    <form class="form" id="set-form" style="margin-top:1rem">
+      <label>Name<input name="name" value="${c.name || ""}" required /></label>
+      <label>Tagline<input name="tagline" value="${c.tagline || ""}" /></label>
+      <div class="row-2">
+        <label>Phone<input name="phone" value="${c.phone || ""}" /></label>
+        <label>Email<input name="email" value="${c.email || ""}" /></label>
+      </div>
+      <label>Address<input name="address" value="${c.address || ""}" /></label>
+      <div class="row-2">
+        <label>City<input name="city" value="${c.city || ""}" /></label>
+        <label>Postal<input name="postalCode" value="${c.postal_code || ""}" /></label>
+      </div>
+      <label>Cal.com URL<input name="calEmbedUrl" value="${c.cal_embed_url || ""}" /></label>
+      <button class="btn btn-primary" type="submit">Save settings</button>
+    </form>
+    <h2 style="margin-top:2rem">Services</h2>
+    <div id="svc-list"></div>
+    <form class="form" id="svc-form" style="margin-top:1rem">
+      <h3>Add service</h3>
+      <label>Name<input name="name" required /></label>
+      <div class="row-2">
+        <label>Minutes<input name="durationMinutes" type="number" value="60" /></label>
+        <label>Price (CAD)<input name="price" type="number" step="0.01" value="0" /></label>
+      </div>
+      <button class="btn btn-ghost" type="submit">Add service</button>
+    </form>`;
+  const services = await api("/api/portal/services");
+  qs("#svc-list").innerHTML = (services.services || []).map((s) =>
+    `<p>${s.name} · ${s.duration_minutes} min · ${money(s.price_cents)}</p>`
+  ).join("") || empty("No services.");
+  qs("#set-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await api("/api/portal/settings", {
+        method: "POST",
+        body: {
+          name: fd.get("name"), tagline: fd.get("tagline"), phone: fd.get("phone"),
+          email: fd.get("email"), address: fd.get("address"), city: fd.get("city"),
+          postalCode: fd.get("postalCode"), calEmbedUrl: fd.get("calEmbedUrl"),
+        },
+      });
+      toast("Settings saved");
+    } catch (err) { toast(err.message, "err"); }
+  });
+  qs("#svc-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await api("/api/portal/services", {
+        method: "POST",
+        body: { name: fd.get("name"), durationMinutes: Number(fd.get("durationMinutes")), priceCents: Math.round(Number(fd.get("price")) * 100) },
+      });
+      toast("Service added");
+      showSettings();
+    } catch (err) { toast(err.message, "err"); }
+  });
+}
+
 async function route() {
   const hash = (location.hash || "#today").slice(1);
   try {
     if (hash.startsWith("chart/")) await showChart(hash.slice(6).split("?")[0]);
     else if (hash.startsWith("patients")) await showPatients();
+    else if (hash.startsWith("calendar")) await showCalendar();
     else if (hash.startsWith("desk")) await showDesk();
     else if (hash.startsWith("claims")) await showClaims();
+    else if (hash.startsWith("forms")) await showForms();
+    else if (hash.startsWith("connectors")) await showConnectors();
+    else if (hash.startsWith("settings")) await showSettings();
     else await showToday();
   } catch (err) {
     if (/sign in/i.test(err.message)) {
