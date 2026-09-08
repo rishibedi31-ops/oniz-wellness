@@ -47,8 +47,21 @@ async function showPatients() {
     <p class="kicker">Roster</p>
     <h1>Patients</h1>
     <form id="search" class="row-2" style="margin-top:1rem;max-width:28rem">
-      <input name="q" placeholder="Search name, email, phone" value="${q}" />
+      <input name="q" placeholder="Search name, email, phone" value="${q.replace(/"/g, """)}" />
       <button class="btn btn-ghost" type="submit">Search</button>
+    </form>
+    <form class="form notice" id="add-patient" style="margin-top:1.25rem">
+      <h3>Add patient</h3>
+      <div class="row-2">
+        <label>First name<input name="firstName" required autocomplete="given-name" /></label>
+        <label>Last name<input name="lastName" required autocomplete="family-name" /></label>
+      </div>
+      <div class="row-2">
+        <label>Email<input name="email" type="email" required autocomplete="email" /></label>
+        <label>Phone<input name="phone" required autocomplete="tel" /></label>
+      </div>
+      <label>Date of birth<input name="dateOfBirth" type="date" /></label>
+      <button class="btn btn-primary" type="submit">Save patient</button>
     </form>
     <div class="table-wrap" style="margin-top:1rem"><table>
       <thead><tr><th>Name</th><th>Email</th><th>Phone</th></tr></thead>
@@ -61,6 +74,29 @@ async function showPatients() {
   qs("#search").addEventListener("submit", (e) => {
     e.preventDefault();
     location.hash = "patients?q=" + encodeURIComponent(new FormData(e.target).get("q") || "");
+  });
+  qs("#add-patient").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const btn = e.target.querySelector("[type=submit]");
+    btn.disabled = true;
+    try {
+      const res = await api("/api/portal/patients", {
+        method: "POST",
+        body: {
+          firstName: fd.get("firstName"),
+          lastName: fd.get("lastName"),
+          email: fd.get("email"),
+          phone: fd.get("phone"),
+          dateOfBirth: fd.get("dateOfBirth") || null,
+        },
+      });
+      toast("Patient saved");
+      location.hash = "chart/" + res.patient.id;
+    } catch (err) {
+      toast(err.message, "err");
+      btn.disabled = false;
+    }
   });
   qsa("tr.clickable").forEach((row) => {
     row.addEventListener("click", () => { location.hash = "chart/" + row.dataset.id; });
