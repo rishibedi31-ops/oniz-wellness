@@ -123,9 +123,10 @@ async function showChart(id) {
       <button data-pane="notes">Notes</button>
     </div>
     <div id="pane"></div>`;
+  const forms = await api("/api/portal/forms").catch(() => ({ intake: null, soap: null, consents: [] }));
   const panes = {
     visits: () => apptTable(d.visits),
-    soap: () => soapPane(d.soap, id),
+    soap: () => soapPane(d.soap, id, forms.soap),
     intake: () => (d.intakes || []).map((i) => `<article class="notice" style="margin-top:0.8rem"><p class="muted">${formatWhen(i.submitted_at)}</p><pre style="white-space:pre-wrap;font:inherit">${JSON.stringify(i.answers_json, null, 2)}</pre></article>`).join("") || empty("No intake yet."),
     consents: () => (d.consents || []).map((c) => `<p>${c.template_name} · ${c.signed_name} · ${formatWhen(c.signed_at)}</p>`).join("") || empty("No signatures."),
     insurance: () => insurancePane(d.insurances, id),
@@ -144,7 +145,17 @@ async function showChart(id) {
 
 function empty(t) { return `<p class="muted" style="margin-top:0.8rem">${t}</p>`; }
 
-function soapPane(notes, id) {
+function soapPane(notes, id, soapTmpl) {
+  const schema = soapTmpl && soapTmpl.schema_json ? soapTmpl.schema_json : {
+    sections: [
+      { title: "SOAP", fields: [
+        { id: "subjective", label: "Subjective", type: "textarea" },
+        { id: "objective", label: "Objective", type: "textarea" },
+        { id: "assessment", label: "Assessment", type: "textarea" },
+        { id: "plan", label: "Plan", type: "textarea" },
+      ] },
+    ],
+  };
   const list = (notes || []).map((n) => `<article class="notice" style="margin-top:0.8rem">
     <p class="muted">${formatWhen(n.visit_at)}</p>
     <p><strong>S</strong> ${n.subjective || "—"}</p>
@@ -152,14 +163,36 @@ function soapPane(notes, id) {
     <p><strong>A</strong> ${n.assessment || "—"}</p>
     <p><strong>P</strong> ${n.plan || "—"}</p>
   </article>`).join("") || empty("No SOAP notes yet.");
+  let fields = "";
+  for (const sec of schema.sections || []) {
+    fields += `<h3>${sec.title || ""}</h3>` + (sec.fields || []).map(fieldInput).join("");
+  }
   return list + `<form class="form" id="soap-form" style="margin-top:1.25rem">
-    <h3>New note</h3>
-    <label>Subjective<textarea name="subjective"></textarea></label>
-    <label>Objective<textarea name="objective"></textarea></label>
-    <label>Assessment<textarea name="assessment"></textarea></label>
-    <label>Plan<textarea name="plan"></textarea></label>
+    <h3>New note${soapTmpl ? " · v" + soapTmpl.version : ""}</h3>
+    ${fields}
     <button class="btn btn-primary" type="submit">Save SOAP</button>
   </form>`;
+}
+
+function fieldInput(f) {
+  const req = f.required ? "required" : "";
+  const id = f.id || "field";
+  const label = f.label || id;
+  if (f.type === "textarea") return `<label>${label}<textarea name="${id}" ${req}></textarea></label>`;
+  if (f.type === "select") {
+    const opts = ["<option value=''></option>"].concat((f.options || []).map((o) => `<option>${o}</option>`)).join("");
+    return `<label>${label}<select name="${id}" ${req}>${opts}</select></label>`;
+  }
+  if (f.type === "yesno") {
+    return `<label>${label}<select name="${id}" ${req}><option value=""></option><option>Yes</option><option>No</option></select></label>`;
+  }
+  if (f.type === "checkboxes") {
+    return `<fieldset><legend>${label}</legend>${(f.options || []).map((o) =>
+      `<label style="font-weight:400"><input type="checkbox" name="${id}" value="${o}" /> ${o}</label>`
+    ).join("")}</fieldset>`;
+  }
+  if (f.type === "date") return `<label>${label}<input name="${id}" type="date" ${req} /></label>`;
+  return `<label>${label}<input name="${id}" ${req} /></label>`;
 }
 
 function notesPane(notes, id) {
@@ -201,10 +234,21 @@ function bindChart(id, d) {
   if (soap) soap.addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(soap);
+    const answers = {};
+    for (const [k, v] of fd.entries()) {
+      if (answers[k]) answers[k] = [].concat(answers[k], v);
+      else answers[k] = v;
+    }
     try {
       await api(`/api/portal/patients/${id}/soap`, {
         method: "POST",
-        body: { subjective: fd.get("subjective"), objective: fd.get("objective"), assessment: fd.get("assessment"), plan: fd.get("plan") },
+        body: {
+          answers,
+          subjective: answers.subjective || "",
+          objective: answers.objective || "",
+          assessment: answers.assessment || "",
+          plan: answers.plan || "",
+        },
       });
       toast("SOAP saved");
       showChart(id);
@@ -303,28 +347,267 @@ async function showCalendar() {
 async function showForms() {
   setTab("forms");
   const d = await api("/api/portal/forms");
-  qs("#view").innerHTML = `
-    <p class="kicker">Library</p>
-    <h1>Forms</h1>
-    <h2 style="margin-top:1.5rem">Intake templates</h2>
-    ${(d.intakes || []).map((t) => `<p>${t.name} · v${t.version} · ${t.is_active ? "active" : "off"}</p>`).join("") || empty("None.")}
-    <h2 style="margin-top:2rem">Consent templates</h2>
-    ${(d.consents || []).map((t) => `<article class="notice" style="margin-top:0.7rem"><strong>${t.name}</strong> · v${t.version}<p class="muted" style="white-space:pre-wrap;margin-top:0.4rem">${(t.body || "").slice(0, 280)}</p></article>`).join("") || empty("None.")}
-    <form class="form" id="consent-form" style="margin-top:1.5rem">
-      <h3>Add consent</h3>
-      <label>Name<input name="name" required /></label>
-      <label>Body<textarea name="body" required></textarea></label>
-      <button class="btn btn-primary" type="submit">Save consent</button>
-    </form>`;
-  qs("#consent-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    try {
-      await api("/api/portal/forms/consents", { method: "POST", body: { name: fd.get("name"), body: fd.get("body") } });
-      toast("Consent saved");
-      showForms();
-    } catch (err) { toast(err.message, "err"); }
-  });
+  const services = await api("/api/portal/services").catch(() => ({ services: [] }));
+  const state = {
+    pane: "intake",
+    intake: parseSchema(d.intake && d.intake.schema_json, defaultIntakeSchema()),
+    soap: parseSchema(d.soap && d.soap.schema_json, defaultSoapSchema()),
+    intakeName: (d.intake && d.intake.name) || "Clinic intake",
+    soapName: (d.soap && d.soap.name) || "SOAP note",
+    intakeVer: d.intake ? d.intake.version : 0,
+    soapVer: d.soap ? d.soap.version : 0,
+    consents: d.consents || [],
+    services: services.services || [],
+    consentEdit: null,
+  };
+
+  function draw() {
+    qs("#view").innerHTML = `
+      <p class="kicker">Library</p>
+      <h1>Form builders</h1>
+      <p class="muted" style="margin-top:0.4rem">One intake · one SOAP template · as many consents as you need. Saving bumps the version; old submissions stay as they were.</p>
+      <div class="tabs" id="form-tabs" style="margin-top:1.25rem">
+        <button type="button" data-pane="intake"${state.pane === "intake" ? " class='is-on'" : ""}>Intake</button>
+        <button type="button" data-pane="soap"${state.pane === "soap" ? " class='is-on'" : ""}>SOAP</button>
+        <button type="button" data-pane="consents"${state.pane === "consents" ? " class='is-on'" : ""}>Consents</button>
+      </div>
+      <div id="form-pane"></div>`;
+    qsa("#form-tabs button").forEach((btn) => {
+      btn.addEventListener("click", () => { state.pane = btn.dataset.pane; draw(); });
+    });
+    const pane = qs("#form-pane");
+    if (state.pane === "consents") drawConsents(pane);
+    else drawBuilder(pane, state.pane);
+  }
+
+  function drawBuilder(pane, kind) {
+    const schema = kind === "soap" ? state.soap : state.intake;
+    const name = kind === "soap" ? state.soapName : state.intakeName;
+    const ver = kind === "soap" ? state.soapVer : state.intakeVer;
+    pane.innerHTML = `
+      <p class="muted">${kind === "soap" ? "Used when you write a chart note." : "Sent to the patient after a booking."} ${ver ? "Current version " + ver + "." : "Not saved yet."}</p>
+      <label style="margin-top:1rem">Template name<input id="tmpl-name" value="${esc(name)}" /></label>
+      <div id="sec-list"></div>
+      <p style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap">
+        <button class="btn btn-ghost" type="button" id="add-sec">Add section</button>
+        <button class="btn btn-primary" type="button" id="save-tmpl">Save ${kind === "soap" ? "SOAP" : "intake"} template</button>
+      </p>`;
+    qs("#sec-list").innerHTML = schema.sections.map((sec, si) => sectionCard(sec, si, kind)).join("");
+    bindBuilder(kind);
+  }
+
+  function sectionCard(sec, si, kind) {
+    return `<article class="notice" data-sec="${si}" style="margin-top:1rem">
+      <div class="row-2">
+        <label>Section title<input data-k="title" value="${esc(sec.title)}" /></label>
+        <p style="align-self:end"><button class="btn btn-ghost" type="button" data-del-sec="${si}">Remove section</button></p>
+      </div>
+      ${(sec.fields || []).map((f, fi) => fieldCard(f, si, fi)).join("")}
+      <button class="btn btn-ghost" type="button" data-add-field="${si}" style="margin-top:0.6rem">Add field</button>
+    </article>`;
+  }
+
+  function fieldCard(f, si, fi) {
+    const types = [
+      ["text", "Short text"],
+      ["textarea", "Long text"],
+      ["select", "Dropdown"],
+      ["yesno", "Yes / No"],
+      ["checkboxes", "Checkboxes"],
+      ["date", "Date"],
+    ];
+    const opts = (f.options || []).join(", ");
+    const needOpts = f.type === "select" || f.type === "checkboxes";
+    return `<div class="notice" data-field="${si}-${fi}" style="margin-top:0.7rem;padding:0.9rem">
+      <div class="row-2">
+        <label>Question<input data-k="label" value="${esc(f.label)}" /></label>
+        <label>Type<select data-k="type">${types.map(([v, l]) =>
+          `<option value="${v}"${f.type === v ? " selected" : ""}>${l}</option>`
+        ).join("")}</select></label>
+      </div>
+      <label${needOpts ? "" : " hidden"}>Choices (comma separated)<input data-k="options" value="${esc(opts)}" /></label>
+      <label style="flex-direction:row;align-items:center;gap:0.5rem;margin-top:0.4rem">
+        <input type="checkbox" data-k="required"${f.required ? " checked" : ""} /> Required
+      </label>
+      <button class="btn btn-ghost" type="button" data-del-field="${si}-${fi}">Remove field</button>
+    </div>`;
+  }
+
+  function readBuilder(kind) {
+    const schema = kind === "soap" ? state.soap : state.intake;
+    const nameEl = qs("#tmpl-name");
+    if (kind === "soap") state.soapName = nameEl.value.trim() || "SOAP note";
+    else state.intakeName = nameEl.value.trim() || "Clinic intake";
+    qsa("[data-sec]").forEach((wrap) => {
+      const si = Number(wrap.dataset.sec);
+      const title = wrap.querySelector('[data-k="title"]');
+      if (schema.sections[si] && title) schema.sections[si].title = title.value.trim() || "Section";
+    });
+    qsa("[data-field]").forEach((wrap) => {
+      const [si, fi] = wrap.dataset.field.split("-").map(Number);
+      const field = schema.sections[si] && schema.sections[si].fields[fi];
+      if (!field) return;
+      const label = wrap.querySelector('[data-k="label"]');
+      const type = wrap.querySelector('[data-k="type"]');
+      const options = wrap.querySelector('[data-k="options"]');
+      const req = wrap.querySelector('[data-k="required"]');
+      if (label) field.label = label.value.trim() || "Field";
+      if (type) field.type = type.value;
+      if (options) field.options = options.value.split(",").map((s) => s.trim()).filter(Boolean);
+      if (req) field.required = req.checked;
+    });
+  }
+
+  function bindBuilder(kind) {
+    const schema = () => (kind === "soap" ? state.soap : state.intake);
+    qs("#add-sec").addEventListener("click", () => {
+      readBuilder(kind);
+      schema().sections.push({ id: nid(), title: "New section", fields: [] });
+      draw();
+    });
+    qsa("[data-add-field]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        readBuilder(kind);
+        const si = Number(btn.dataset.addField);
+        schema().sections[si].fields.push({
+          id: nid(), label: "New question", type: "textarea", required: false, options: [],
+        });
+        draw();
+      });
+    });
+    qsa("[data-del-sec]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        readBuilder(kind);
+        schema().sections.splice(Number(btn.dataset.delSec), 1);
+        draw();
+      });
+    });
+    qsa("[data-del-field]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        readBuilder(kind);
+        const [si, fi] = btn.dataset.delField.split("-").map(Number);
+        schema().sections[si].fields.splice(fi, 1);
+        draw();
+      });
+    });
+    qsa('[data-k="type"]').forEach((sel) => {
+      sel.addEventListener("change", () => { readBuilder(kind); draw(); });
+    });
+    qs("#save-tmpl").addEventListener("click", async () => {
+      readBuilder(kind);
+      const path = kind === "soap" ? "/api/portal/forms/soap" : "/api/portal/forms/intake";
+      try {
+        const res = await api(path, {
+          method: "POST",
+          body: {
+            name: kind === "soap" ? state.soapName : state.intakeName,
+            schema: kind === "soap" ? state.soap : state.intake,
+          },
+        });
+        if (kind === "soap") state.soapVer = res.template.version;
+        else state.intakeVer = res.template.version;
+        toast("Template saved as version " + res.template.version);
+      } catch (err) { toast(err.message, "err"); }
+    });
+  }
+
+  function drawConsents(pane) {
+    const edit = state.consentEdit;
+    pane.innerHTML = `
+      ${(state.consents).map((c) => `<article class="notice" style="margin-top:0.7rem">
+        <strong>${esc(c.name)}</strong> · v${c.version} · ${c.is_active ? "active" : "off"}
+        <p class="muted" style="white-space:pre-wrap;margin-top:0.4rem">${esc((c.body || "").slice(0, 220))}</p>
+        <button class="btn btn-ghost" type="button" data-edit-c="${c.id}">Edit</button>
+      </article>`).join("") || empty("No consent forms yet.")}
+      <form class="form" id="consent-form" style="margin-top:1.5rem">
+        <h3>${edit ? "Edit consent" : "Add consent"}</h3>
+        <input type="hidden" name="id" value="${edit ? edit.id : ""}" />
+        <label>Name<input name="name" required value="${edit ? esc(edit.name) : ""}" /></label>
+        <label>Linked service
+          <select name="serviceId">
+            <option value="">All visits</option>
+            ${state.services.map((s) => `<option value="${s.id}"${edit && edit.service_id === s.id ? " selected" : ""}>${esc(s.name)}</option>`).join("")}
+          </select>
+        </label>
+        <label>Consent text<textarea name="body" required>${edit ? esc(edit.body) : ""}</textarea></label>
+        <button class="btn btn-primary" type="submit">${edit ? "Save new version" : "Add consent"}</button>
+      </form>`;
+    qsa("[data-edit-c]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.consentEdit = state.consents.find((c) => c.id === btn.dataset.editC) || null;
+        draw();
+      });
+    });
+    qs("#consent-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      try {
+        await api("/api/portal/forms/consents", {
+          method: "POST",
+          body: {
+            id: fd.get("id") || undefined,
+            name: fd.get("name"),
+            body: fd.get("body"),
+            serviceId: fd.get("serviceId") || null,
+          },
+        });
+        toast("Consent saved");
+        state.consentEdit = null;
+        showForms();
+      } catch (err) { toast(err.message, "err"); }
+    });
+  }
+
+  draw();
+}
+
+function parseSchema(raw, fallback) {
+  let v = raw;
+  if (typeof v === "string") {
+    try { v = JSON.parse(v); } catch { v = null; }
+  }
+  if (!v || !Array.isArray(v.sections) || !v.sections.length) return fallback;
+  return {
+    sections: v.sections.map((s) => ({
+      id: s.id || nid(),
+      title: s.title || "Section",
+      fields: (s.fields || []).map((f) => ({
+        id: f.id || nid(),
+        label: f.label || "Field",
+        type: f.type || "text",
+        required: Boolean(f.required),
+        options: f.options || [],
+      })),
+    })),
+  };
+}
+
+function defaultIntakeSchema() {
+  return { sections: [{ id: "s1", title: "This visit", fields: [
+    { id: "reason", label: "What is the main reason for your visit?", type: "textarea", required: true, options: [] },
+    { id: "goals", label: "What would you like to change in the next 90 days?", type: "textarea", required: true, options: [] },
+  ] }] };
+}
+
+function defaultSoapSchema() {
+  return { sections: [
+    { id: "s", title: "Subjective", fields: [{ id: "subjective", label: "Subjective — what the patient reports", type: "textarea", required: true, options: [] }] },
+    { id: "o", title: "Objective", fields: [{ id: "objective", label: "Objective — findings and vitals", type: "textarea", required: true, options: [] }] },
+    { id: "a", title: "Assessment", fields: [{ id: "assessment", label: "Assessment", type: "textarea", required: true, options: [] }] },
+    { id: "p", title: "Plan", fields: [{ id: "plan", label: "Plan and recommendations", type: "textarea", required: true, options: [] }] },
+  ] };
+}
+
+function esc(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&#38;")
+    .replace(/</g, "&#60;")
+    .replace(/>/g, "&#62;")
+    .replace(/"/g, "&#34;");
+}
+
+function nid() {
+  return "id-" + Math.random().toString(36).slice(2, 10);
 }
 
 async function showConnectors() {
