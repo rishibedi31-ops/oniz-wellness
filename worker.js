@@ -35,10 +35,29 @@ const DEFAULT_HOURS = {
 };
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (!url.pathname.startsWith("/api")) {
+      const page = await serveAsset(request, env);
+      if (page) return page;
+    }
     return handleRequest(request, env);
   },
 };
+
+async function serveAsset(request, env) {
+  if (!env || !env.ASSETS) return null;
+  const url = new URL(request.url);
+  const paths = [url.pathname];
+  if (url.pathname === "/" || url.pathname === "") paths.push("/index.html");
+  else if (url.pathname.endsWith("/")) paths.push(url.pathname + "index.html");
+  else if (!url.pathname.includes(".")) paths.push(url.pathname + ".html");
+  for (const path of paths) {
+    const res = await env.ASSETS.fetch(new URL(path, url.origin));
+    if (res && res.status !== 404) return res;
+  }
+  return null;
+}
 
 export async function handleRequest(request, env) {
   const origin = corsOrigin(request, env);
@@ -77,7 +96,7 @@ function json(body, status = 200, extra = {}) {
 }
 
 function corsOrigin(request, env) {
-  const allowed = (env.ALLOWED_ORIGIN || "*").trim();
+  const allowed = (pickString(env, "ALLOWED_ORIGIN") || "*").trim();
   const reqOrigin = request.headers.get("Origin");
   if (allowed === "*") return reqOrigin || "*";
   if (reqOrigin && allowed.split(",").map((s) => s.trim()).includes(reqOrigin)) return reqOrigin;
@@ -95,7 +114,155 @@ function corsHeaders(origin) {
 }
 
 function clinicId(env) {
-  return env.CLINIC_ID || CLINIC_FALLBACK;
+  return pickString(env, "CLINIC_ID") || CLINIC_FALLBACK;
+}
+
+function envNames(env) {
+  try {
+    return Object.keys(env || {}).sort();
+  } catch {
+    return [];
+  }
+}
+
+function pickString(env, ...names) {
+  if (!env) return "";
+  for (const name of names) {
+    const value = unwrapBinding(env[name]);
+    if (value) return value;
+  }
+  try {
+    const proc = globalThis.process?.env;
+    if (proc) {
+      for (const name of names) {
+        const value = unwrapBinding(proc[name]);
+        if (value) return value;
+      }
+    }
+  } catch {
+    /* no Node compat */
+  }
+  return "";
+}
+
+function unwrapBinding(raw) {
+  if (raw == null || raw === "") return "";
+  if (typeof raw === "string") return cleanSecret(raw);
+  if (typeof raw === "number" || typeof raw === "boolean") return String(raw);
+  return "";
+}
+
+async function pickSecret(env, ...names) {
+  const sync = pickString(env, ...names);
+  if (sync) return sync;
+  if (!env) return "";
+  for (const name of names) {
+    const raw = env[name];
+    if (raw && typeof raw.get === "function") {
+      try {
+        const value = cleanSecret(await raw.get());
+        if (value) return value;
+      } catch {
+        /* not a Secrets Store binding */
+      }
+    }
+  }
+  return "";
+}
+
+function cleanSecret(value) {
+  let v = String(value ?? "").trim();
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+    v = v.slice(1, -1).trim();
+  }
+  if (/^bearer\s+/i.test(v)) v = v.replace(/^bearer\s+/i, "").trim();
+  if (!v) return "";
+  if (/^YOUR[-_]/i.test(v) || v.includes("YOUR-PROJECT") || v.includes("YOUR_SERVICE")) return "";
+  return v;
+}
+
+async function supabaseCreds(env) {
+  const url = await pickSecret(env, "SUPABASE_URL", "SUPABASE_PROJECT_URL", "NEXT_PUBLIC_SUPABASE_URL");
+  const key = await pickSecret(
+    env,
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_SERVICE_KEY",
+    "SERVICE_ROLE_KEY",
+    "SUPABASE_SECRET_KEY",
+  );
+  return { url, key };
+}
+
+function plainEnv(env) {
+  const out = {};
+  for (const k of envNames(env)) {
+    const v = unwrapBinding(env[k]);
+    if (v) out[k] = v;
+  }
+  return Object.assign(out, env);
+}
+
+async function withSupabase(env) {
+  const { url, key } = await supabaseCreds(env);
+  if (!url || !key) fail(500, missingSecretsMessage(env, url, key));
+  return Object.assign(plainEnv(env), {
+    SUPABASE_URL: url.replace(/\/$/, ""),
+    SUPABASE_SERVICE_ROLE_KEY: key,
+  });
+}
+
+function missingSecretsMessage(env, url, key) {
+  const names = envNames(env);
+  const missing = [!url ? "SUPABASE_URL" : null, !key ? "SUPABASE_SERVICE_ROLE_KEY" : null].filter(Boolean);
+  return (
+    `Worker cannot see ${missing.join(" and ")}. ` +
+    `Open Cloudflare → Workers & Pages → onizwellness → Settings → Variables and Secrets. ` +
+    `Names must be ALL CAPS on this worker, then Save and Deploy. ` +
+    `A .env file on your computer is not sent to Cloudflare. ` +
+    `Bindings visible here: ${names.length ? names.join(", ") : "(none)"}`
+  );
+}
+
+async function healthPayload(env) {
+  const { url, key } = await supabaseCreds(env);
+  return {
+    ok: true,
+    service: "oniz-health-api",
+    ready: Boolean(url && key),
+    secrets: {
+      SUPABASE_URL: Boolean(url),
+      SUPABASE_SERVICE_ROLE_KEY: Boolean(key),
+      SESSION_SECRET: Boolean(pickString(env, "SESSION_SECRET")),
+      STAFF_EMAIL: Boolean(pickString(env, "STAFF_EMAIL")),
+      STAFF_PASSWORD: Boolean(pickString(env, "STAFF_PASSWORD")),
+    },
+    bindings: envNames(env),
+    clinicId: clinicId(env),
+  };
+}
+
+function homePage(health) {
+  const ready = health.ready
+    ? "Supabase is connected."
+    : "Supabase secrets are not visible to this worker yet.";
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Oniz Health API</title>
+<style>
+  body{margin:0;font-family:Outfit,system-ui,sans-serif;background:#f3eee4;color:#1a241c}
+  main{max-width:36rem;margin:12vh auto;padding:0 1.25rem}
+  h1{font-family:Georgia,serif;font-weight:500;font-size:2.4rem}
+  p{color:#5e6a61;line-height:1.55}
+  a{color:#3d5846}
+  code{font-size:.9rem}
+</style></head>
+<body><main>
+  <p style="letter-spacing:.2em;text-transform:uppercase;font-size:.75rem;color:#3d5846">Oniz Health and Wellness</p>
+  <h1>Worker is running.</h1>
+  <p>${ready}</p>
+  <p>Check <a href="/api/health">/api/health</a> · clinic data <a href="/api/clinic">/api/clinic</a></p>
+  ${health.ready ? "" : `<p>Add <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code> on <strong>this</strong> worker: onizwellness → Settings → Variables and Secrets → Deploy.</p>`}
+</main></body></html>`;
 }
 
 function nid() {
@@ -123,18 +290,26 @@ function pathParts(url) {
 }
 
 async function route(request, env) {
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-    fail(500, "Worker secrets missing: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
-  }
   const url = new URL(request.url);
   const parts = pathParts(url);
-  if (parts[0] !== "api") fail(404, "Not found.");
   const method = request.method.toUpperCase();
+
+  if (method === "GET" && (url.pathname === "/" || url.pathname === "")) {
+    const health = await healthPayload(env);
+    return new Response(homePage(health), {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+
+  if (parts[0] !== "api") fail(404, "Not found. API lives under /api.");
+
   const rest = parts.slice(1);
   const key = `${method} /${rest.join("/")}`;
 
   if (method === "GET" && rest.length === 0) return json(apiIndex());
-  if (key === "GET /health") return json({ ok: true, service: "oniz-health-api" });
+  if (key === "GET /health") return json(await healthPayload(env));
+
+  env = await withSupabase(env);
 
   if (key === "GET /clinic") return json(await publicClinic(env));
   if (key === "GET /availability") return json(await availability(env, url.searchParams));
@@ -243,7 +418,8 @@ function apiIndex() {
 /* ── Supabase REST ──────────────────────────────────────────────────────── */
 
 async function sb(env, table, { method = "GET", query = "", body, headers = {} } = {}) {
-  const base = String(env.SUPABASE_URL).replace(/\/$/, "");
+  const base = String(env.SUPABASE_URL || "").replace(/\/$/, "");
+  if (!base || !env.SUPABASE_SERVICE_ROLE_KEY) fail(500, "Supabase is not configured on this worker.");
   const url = `${base}/rest/v1/${table}${query ? `?${query}` : ""}`;
   const res = await fetch(url, {
     method,
@@ -789,7 +965,7 @@ async function staffLogin(env, body) {
       "practitioners",
       qs({ clinic_id: `eq.${clinicId(env)}`, is_active: "eq.true", order: "created_at.asc", limit: "1" }),
     ).then((rows) => rows[0] || null);
-    role = practitioner?.role || "owner";
+    role = "owner";
   } else {
     let login = null;
     try {
@@ -818,7 +994,7 @@ async function staffLogin(env, body) {
     clinic_id: clinicId(env),
     practitioner_id: practitioner?.id || null,
   });
-  return { ...issued, role: "staff", name, email };
+  return { ...issued, role: "staff", staffRole: role, name, email };
 }
 
 async function patientLogin(env, body) {
