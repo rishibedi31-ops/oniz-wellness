@@ -369,6 +369,12 @@ async function route(request, env) {
   if (key === "GET /portal/services") return json(await listServices(env, session));
   if (key === "POST /portal/services") return json(await saveService(env, session, await readJson(request)));
   if (key === "GET /portal/forms") return json(await formLibrary(env, session));
+  if (key === "POST /portal/forms/intake") {
+    return json(await saveIntakeTemplate(env, session, await readJson(request)));
+  }
+  if (key === "POST /portal/forms/soap") {
+    return json(await saveSoapTemplate(env, session, await readJson(request)));
+  }
   if (key === "POST /portal/forms/consents") {
     return json(await saveConsentTemplate(env, session, await readJson(request)));
   }
@@ -1207,16 +1213,17 @@ async function addNote(env, session, id, body) {
 }
 
 async function saveSoap(env, session, id, body) {
+  const answers = body.answers && typeof body.answers === "object" ? body.answers : {};
   const payload = {
     clinic_id: staffClinic(session),
     patient_id: id,
     appointment_id: body.appointmentId || body.appointment_id || null,
     practitioner_id: session.practitioner_id || session.sub,
     visit_at: body.visitAt || body.visit_at || nowIso(),
-    subjective: body.subjective || null,
-    objective: body.objective || null,
-    assessment: body.assessment || null,
-    plan: body.plan || null,
+    subjective: body.subjective || answers.subjective || null,
+    objective: body.objective || answers.objective || null,
+    assessment: body.assessment || answers.assessment || null,
+    plan: body.plan || answers.plan || null,
     updated_at: nowIso(),
   };
   if (body.id) {
@@ -1404,9 +1411,74 @@ async function saveService(env, session, body) {
 
 async function formLibrary(env, session) {
   const id = staffClinic(session);
-  const intakes = await many(env, "intake_templates", qs({ clinic_id: `eq.${id}`, order: "created_at.desc" }));
+  const intakes = await many(env, "intake_templates", qs({ clinic_id: `eq.${id}`, order: "version.desc" }));
   const consents = await many(env, "consent_templates", qs({ clinic_id: `eq.${id}`, order: "name.asc" }));
-  return { intakes, consents };
+  let soaps = [];
+  try {
+    soaps = await many(env, "soap_templates", qs({ clinic_id: `eq.${id}`, order: "version.desc" }));
+  } catch {
+    soaps = [];
+  }
+  const intake = intakes.find((t) => t.is_active) || intakes[0] || null;
+  const soap = soaps.find((t) => t.is_active) || soaps[0] || null;
+  return { intake, soap, intakes, consents };
+}
+
+function normalizeSchema(raw) {
+  const sections = Array.isArray(raw?.sections) ? raw.sections : [];
+  return {
+    sections: sections.map((sec, i) => ({
+      id: String(sec.id || "sec-" + (i + 1)),
+      title: String(sec.title || "Section"),
+      fields: (Array.isArray(sec.fields) ? sec.fields : []).map((f, j) => ({
+        id: String(f.id || "f-" + (j + 1)),
+        label: String(f.label || "Field"),
+        type: ["text", "textarea", "select", "yesno", "checkboxes", "date"].includes(f.type) ? f.type : "text",
+        required: Boolean(f.required),
+        options: Array.isArray(f.options) ? f.options.map(String).filter(Boolean) : [],
+      })),
+    })),
+  };
+}
+
+async function upsertNamedTemplate(env, table, session, body, fallbackName) {
+  const clinic = staffClinic(session);
+  const schema = normalizeSchema(body.schema || body.schema_json);
+  if (!schema.sections.length) fail(400, "Add at least one section.");
+  const name = String(body.name || fallbackName).trim() || fallbackName;
+  let existing = [];
+  try {
+    existing = await many(env, table, qs({ clinic_id: `eq.${clinic}`, order: "created_at.asc" }));
+  } catch (err) {
+    fail(500, table + " is missing. Run the SOAP/intake SQL in Supabase.");
+  }
+  const row0 = existing[0];
+  if (row0) {
+    const row = await patch(env, table, qs({ id: `eq.${row0.id}` }), {
+      name,
+      schema_json: schema,
+      version: Number(row0.version || 1) + 1,
+      is_active: true,
+    });
+    return { template: row };
+  }
+  const row = await insert(env, table, {
+    id: nid(),
+    clinic_id: clinic,
+    name,
+    version: 1,
+    schema_json: schema,
+    is_active: true,
+  });
+  return { template: row };
+}
+
+async function saveIntakeTemplate(env, session, body) {
+  return upsertNamedTemplate(env, "intake_templates", session, body, "Clinic intake");
+}
+
+async function saveSoapTemplate(env, session, body) {
+  return upsertNamedTemplate(env, "soap_templates", session, body, "SOAP note");
 }
 
 async function saveConsentTemplate(env, session, body) {
