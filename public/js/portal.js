@@ -42,12 +42,13 @@ function apptTable(rows) {
 async function showPatients() {
   setTab("patients");
   const q = new URLSearchParams(location.hash.split("?")[1] || "").get("q") || "";
+  const qSafe = String(q).replace(/[<>&"]/g, "");
   const d = await api("/api/portal/patients" + (q ? `?q=${encodeURIComponent(q)}` : ""));
   qs("#view").innerHTML = `
     <p class="kicker">Roster</p>
     <h1>Patients</h1>
     <form id="search" class="row-2" style="margin-top:1rem;max-width:28rem">
-      <input name="q" placeholder="Search name, email, phone" value="${q.replace(/"/g, """)}" />
+      <input name="q" placeholder="Search name, email, phone" value="${qSafe}" />
       <button class="btn btn-ghost" type="submit">Search</button>
     </form>
     <form class="form notice" id="add-patient" style="margin-top:1.25rem">
